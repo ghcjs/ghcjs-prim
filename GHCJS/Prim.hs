@@ -1,4 +1,4 @@
-{-# LANGUAGE MagicHash, DeriveDataTypeable, JavaScriptFFI #-}
+{-# LANGUAGE MagicHash, DeriveDataTypeable, CPP, JavaScriptFFI #-}
 
 module GHCJS.Prim (JSRef(..), JSException(..), mkJSException) where
 
@@ -27,8 +27,12 @@ instance Ex.Exception JSException
 instance Show JSException where
   show (JSException _ xs) = "JavaScript exception: " ++ xs
 
+#ifdef __GHCJS__ 
 foreign import javascript unsafe "h$toHsString(\"\" + $1)"
    js_toString :: JSRef a -> IO Int
+#else
+js_toString = error "js_toString: only available in JavaScript"
+#endif
 
 mkJSException :: JSRef a -> IO JSException
 mkJSException ref = do
