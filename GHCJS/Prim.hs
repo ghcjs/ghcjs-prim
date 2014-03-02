@@ -12,7 +12,7 @@ import qualified GHC.Exception as Ex
   JSRef is a boxed type that can be used as FFI
   argument or result.
 -}
-#ifdef __GHCJS__
+#ifdef ghcjs_HOST_OS
 data JSRef a = JSRef ByteArray#
 #else
 data JSRef a = JSRef Addr#
