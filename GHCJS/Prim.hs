@@ -1,6 +1,9 @@
 {-# LANGUAGE MagicHash, DeriveDataTypeable, CPP, JavaScriptFFI #-}
 
-module GHCJS.Prim (JSRef(..), JSException(..), mkJSException) where
+module GHCJS.Prim ( JSRef(..)
+                  , JSException(..)
+                  , mkJSException
+                  , WouldBlockException(..) ) where
 
 import           Data.Typeable (Typeable)
 import           Unsafe.Coerce (unsafeCoerce)
@@ -38,4 +41,13 @@ mkJSException :: JSRef a -> IO JSException
 mkJSException ref = do
     xs <- js_toString ref
     return (JSException (unsafeCoerce ref) (unsafeCoerce xs))
+
+{- | If a synchronous thread tries to do something that can only
+     be done asynchronously, and the thread is set up to not
+     continue asynchronously, it receives this exception.
+ -}
+data WouldBlockException = WouldBlockException String
+  deriving (Show, Typeable)
+
+instance Ex.Exception WouldBlockException
 
