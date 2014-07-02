@@ -1,10 +1,20 @@
-{-| These are just used by the RTS -}
+{-# LANGUAGE CPP, LambdaCase, JavaScriptFFI, UnliftedFFITypes, BangPatterns,
+             DeriveGeneric, StandaloneDeriving, MagicHash, TupleSections
+  #-}
 
-module GHCJS.Prim.Internal (blockedIndefinitelyOnMVar) where
+{- | Code used by the RTS
 
-import Control.Exception
+ -}
 
-import GHCJS.Prim
+module GHCJS.Prim.Internal ( blockedIndefinitelyOnMVar
+                           , blockedIndefinitelyOnSTM
+                           , wouldBlock
+                           ) where
+
+import           Control.Exception
+
+import           GHCJS.Prim
+import           GHC.Exts
 
 wouldBlock :: String -> SomeException
 wouldBlock = toException . WouldBlockException
@@ -14,3 +24,5 @@ blockedIndefinitelyOnMVar = toException BlockedIndefinitelyOnMVar
 
 blockedIndefinitelyOnSTM :: SomeException
 blockedIndefinitelyOnSTM = toException BlockedIndefinitelyOnSTM
+
+

@@ -1,3 +1,4 @@
+#ifdef __GHCJS__
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -19,4 +20,5 @@ void setJavaScriptHandler(javaScriptHandler h) {
   _javaScriptHandler = h;
 }
 
+#endif
 
