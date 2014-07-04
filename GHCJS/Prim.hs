@@ -5,10 +5,21 @@
 
 module GHCJS.Prim ( JSRef(..)
                   , JSException(..)
-#ifdef __GHCJS__
-                  , mkJSException
-#endif
                   , WouldBlockException(..)
+#ifdef ghcjs_HOST_OS
+                  , mkJSException
+                  , fromJSString
+                  , toJSString
+                  , toJSArray
+                  , fromJSArray
+                  , fromJSInt
+                  , toJSInt
+                  , isNull
+                  , isUndefined
+                  , jsNull
+                  , getProp
+                  , getProp'
+#endif
                   ) where
 
 import           Data.Typeable (Typeable)
@@ -40,14 +51,98 @@ instance Ex.Exception JSException
 instance Show JSException where
   show (JSException _ xs) = "JavaScript exception: " ++ xs
 
-#ifdef __GHCJS__
-foreign import javascript unsafe "h$toHsString(\"\" + $1)"
-   js_toString :: JSRef a -> IO Int
+#ifdef ghcjs_HOST_OS
 
 mkJSException :: JSRef a -> IO JSException
 mkJSException ref = do
-    xs <- js_toString ref
+    xs <- js_fromJSString ref
     return (JSException (unsafeCoerce ref) (unsafeCoerce xs))
+
+{- | Low-level conversion utilities for packages that cannot
+     depend on ghcjs-base
+ -}
+fromJSString :: JSRef a -> IO String
+fromJSString = unsafeCoerce . js_fromJSString
+{-# INLINE fromJSString #-}
+
+toJSString :: String -> JSRef a
+toJSString = js_toJSString . unsafeCoerce . seqList
+{-# INLINE toJSString #-}
+
+fromJSArray :: JSRef a -> IO [JSRef a]
+fromJSArray = unsafeCoerce . js_fromJSArray
+{-# INLINE fromJSArray #-}
+
+toJSArray :: [JSRef a] -> IO (JSRef b)
+toJSArray = js_toJSArray . unsafeCoerce . seqList
+{-# INLINE toJSArray #-}
+
+fromJSInt :: JSRef a -> Int
+fromJSInt = js_fromJSInt
+{-# INLINE fromJSInt #-}
+
+toJSInt :: Int -> JSRef a
+toJSInt = js_toJSInt
+{-# INLINE toJSInt #-}
+
+isNull :: JSRef a -> Bool
+isNull = js_isNull
+{-# INLINE isNull #-}
+
+isUndefined :: JSRef a -> Bool
+isUndefined = js_isUndefined
+{-# INLINE isUndefined #-}
+
+jsNull :: JSRef a
+jsNull = js_null
+{-# INLINE jsNull #-}
+
+getProp :: JSRef a -> String -> IO (JSRef b)
+getProp o p = js_getProp o (unsafeCoerce $ seqList p)
+{-# INLINE getProp #-}
+
+getProp' :: JSRef a -> JSRef b -> IO (JSRef c)
+getProp' o p = js_getProp' o p
+{-# INLINE getProp' #-}
+
+-- reduce the spine and all list elements to whnf
+seqList :: [a] -> [a]
+seqList []         = []
+seqList xxs@(x:xs) = x `seq` seqList xs `seq` xxs
+
+foreign import javascript unsafe "h$fromJSString(\"\" + $1)"
+  js_fromJSString :: JSRef a -> IO Int
+
+foreign import javascript unsafe "h$toJSString($1)"
+  js_toJSString :: Int -> JSRef a
+
+foreign import javascript unsafe "h$fromJSArray($1)"
+  js_fromJSArray :: JSRef a -> IO Int
+
+foreign import javascript unsafe "h$toJSArray($1)"
+  js_toJSArray :: Int -> IO (JSRef a)
+
+foreign import javascript unsafe "$1 === null"
+  js_isNull :: JSRef a -> Bool
+
+foreign import javascript unsafe "$1 === undefined"
+  js_isUndefined :: JSRef a -> Bool
+
+foreign import javascript unsafe "$1"
+  js_fromJSInt :: JSRef a -> Int
+
+foreign import javascript unsafe "$1"
+  js_toJSInt :: Int -> JSRef a
+
+foreign import javascript unsafe "null"
+  js_null :: JSRef a
+
+foreign import javascript unsafe "$1[h$toJSString($2)]"
+  js_getProp :: JSRef a -> Int -> IO (JSRef b)
+
+foreign import javascript unsafe "$1[$2]"
+  js_getProp' :: JSRef a -> JSRef b -> IO (JSRef c)
+
 #endif
 
 {- | If a synchronous thread tries to do something that can only
