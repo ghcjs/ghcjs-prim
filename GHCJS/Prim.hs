@@ -107,19 +107,25 @@ getProp' o p = js_getProp' o p
 
 -- reduce the spine and all list elements to whnf
 seqList :: [a] -> [a]
-seqList []         = []
-seqList xxs@(x:xs) = x `seq` seqList xs `seq` xxs
+seqList xs = go xs `seq` xs
+  where go (x:xs) = x `seq` go xs
+        go []     = ()
 
-foreign import javascript unsafe "h$fromJSString(\"\" + $1)"
+seqListSpine :: [a] -> [a]
+seqListSpine xs = go xs `seq` xs
+  where go (x:xs) = go xs
+        go []     = ()
+
+foreign import javascript unsafe "h$toHsString(\"\" + $1)"
   js_fromJSString :: JSRef a -> IO Int
 
-foreign import javascript unsafe "h$toJSString($1)"
+foreign import javascript unsafe "h$fromHsString($1)"
   js_toJSString :: Int -> JSRef a
 
-foreign import javascript unsafe "h$fromJSArray($1)"
+foreign import javascript unsafe "h$toHsListJSRef($1)"
   js_fromJSArray :: JSRef a -> IO Int
 
-foreign import javascript unsafe "h$toJSArray($1)"
+foreign import javascript unsafe "h$fromHsListJSRef($1)"
   js_toJSArray :: Int -> IO (JSRef a)
 
 foreign import javascript unsafe "$1 === null"
@@ -128,16 +134,16 @@ foreign import javascript unsafe "$1 === null"
 foreign import javascript unsafe "$1 === undefined"
   js_isUndefined :: JSRef a -> Bool
 
-foreign import javascript unsafe "$1"
+foreign import javascript unsafe "$r = $1;"
   js_fromJSInt :: JSRef a -> Int
 
-foreign import javascript unsafe "$1"
+foreign import javascript unsafe "$r = $1;"
   js_toJSInt :: Int -> JSRef a
 
 foreign import javascript unsafe "null"
   js_null :: JSRef a
 
-foreign import javascript unsafe "$1[h$toJSString($2)]"
+foreign import javascript unsafe "$1[h$fromHsString($2)]"
   js_getProp :: JSRef a -> Int -> IO (JSRef b)
 
 foreign import javascript unsafe "$1[$2]"
