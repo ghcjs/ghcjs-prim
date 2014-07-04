@@ -140,7 +140,7 @@ foreign import javascript unsafe "$r = $1;"
 foreign import javascript unsafe "$r = $1;"
   js_toJSInt :: Int -> JSRef a
 
-foreign import javascript unsafe "null"
+foreign import javascript unsafe "$r = null;"
   js_null :: JSRef a
 
 foreign import javascript unsafe "$1[h$fromHsString($2)]"
