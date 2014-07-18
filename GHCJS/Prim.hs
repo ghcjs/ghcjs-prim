@@ -54,14 +54,17 @@ instance Show JSException where
 #ifdef ghcjs_HOST_OS
 
 mkJSException :: JSRef a -> IO JSException
-mkJSException ref = do
-    xs <- js_fromJSString ref
-    return (JSException (unsafeCoerce ref) (unsafeCoerce xs))
+mkJSException ref =
+  return (JSException (unsafeCoerce ref) (fromJSString ref))
 
 {- | Low-level conversion utilities for packages that cannot
      depend on ghcjs-base
  -}
-fromJSString :: JSRef a -> IO String
+
+{- | returns an empty string if the JSRef does not contain
+     a string
+ -}
+fromJSString :: JSRef a -> String
 fromJSString = unsafeCoerce . js_fromJSString
 {-# INLINE fromJSString #-}
 
@@ -77,6 +80,8 @@ toJSArray :: [JSRef a] -> IO (JSRef b)
 toJSArray = js_toJSArray . unsafeCoerce . seqList
 {-# INLINE toJSArray #-}
 
+{- | returns zero if the JSRef does not contain a number
+ -}
 fromJSInt :: JSRef a -> Int
 fromJSInt = js_fromJSInt
 {-# INLINE fromJSInt #-}
@@ -116,17 +121,17 @@ seqListSpine xs = go xs `seq` xs
   where go (x:xs) = go xs
         go []     = ()
 
-foreign import javascript unsafe "h$toHsString(\"\" + $1)"
-  js_fromJSString :: JSRef a -> IO Int
+foreign import javascript unsafe "h$toHsString($1)"
+  js_fromJSString :: JSRef a -> Double
 
 foreign import javascript unsafe "h$fromHsString($1)"
-  js_toJSString :: Int -> JSRef a
+  js_toJSString :: Double -> JSRef a
 
 foreign import javascript unsafe "h$toHsListJSRef($1)"
-  js_fromJSArray :: JSRef a -> IO Int
+  js_fromJSArray :: JSRef a -> IO Double
 
 foreign import javascript unsafe "h$fromHsListJSRef($1)"
-  js_toJSArray :: Int -> IO (JSRef a)
+  js_toJSArray :: Double -> IO (JSRef a)
 
 foreign import javascript unsafe "$1 === null"
   js_isNull :: JSRef a -> Bool
@@ -134,7 +139,7 @@ foreign import javascript unsafe "$1 === null"
 foreign import javascript unsafe "$1 === undefined"
   js_isUndefined :: JSRef a -> Bool
 
-foreign import javascript unsafe "$r = $1;"
+foreign import javascript unsafe "$r = typeof($1) === 'number' ? ($1|0) : 0;"
   js_fromJSInt :: JSRef a -> Int
 
 foreign import javascript unsafe "$r = $1;"
@@ -144,7 +149,7 @@ foreign import javascript unsafe "$r = null;"
   js_null :: JSRef a
 
 foreign import javascript unsafe "$1[h$fromHsString($2)]"
-  js_getProp :: JSRef a -> Int -> IO (JSRef b)
+  js_getProp :: JSRef a -> Double -> IO (JSRef b)
 
 foreign import javascript unsafe "$1[$2]"
   js_getProp' :: JSRef a -> JSRef b -> IO (JSRef c)
