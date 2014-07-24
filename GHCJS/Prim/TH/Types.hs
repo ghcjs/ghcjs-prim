@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -O1 #-}
+{-# OPTIONS_GHC -O0 #-}
 {-# LANGUAGE CPP, DeriveGeneric, LambdaCase, MagicHash, StandaloneDeriving #-}
 
 {- |

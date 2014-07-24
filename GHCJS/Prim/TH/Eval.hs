@@ -143,8 +143,9 @@ instance TH.Quasi GHCJSQ where
   qAddModFinalizer fin = GHCJSQ $ \s ->
     return ((), s { qsFinalizers = fin : qsFinalizers s })
   qGetQ = GHCJSQ $ \s ->
-    let lookup m = let x = fromDynamic =<< M.lookup (typeOf x) m in x
-    in  return (lookup (qsMap s), s)
+    let lookup :: forall a. Typeable a => Map TypeRep Dynamic -> Maybe a
+        lookup m = fromDynamic =<< M.lookup (typeOf (undefined::a)) m
+    in return (lookup (qsMap s), s)
   qPutQ k = GHCJSQ $ \s ->
     return ((), s { qsMap = M.insert (typeOf k) (toDyn k) (qsMap s) })
 
@@ -203,6 +204,7 @@ runTH rt obj = \mb_loc -> obj `seq` do
 runTHCode :: Binary a => TH.Q a -> GHCJSQ ByteString
 runTHCode c = BL.toStrict . runPut . put <$> TH.runQ c
 
+{-# NOINLINE loadCode #-}
 loadCode :: ByteString -> IO Any
 loadCode bs = do
   p <- fromBs bs
@@ -247,7 +249,7 @@ foreign import javascript unsafe "h$TH.bufSize($1_1, $1_2)"
 
 -- | actually returns the heap object to be evaluated
 foreign import javascript unsafe "h$TH.loadCode($1_1,$1_2,$2)"
-  js_loadCode :: Ptr Word8 -> Int -> IO Int
+  js_loadCode :: Ptr Word8 -> Int -> IO Double
 
 -- | only safe in JS
 fromBs :: ByteString -> IO (Ptr Word8)
