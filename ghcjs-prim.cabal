@@ -18,7 +18,7 @@ library
   c-sources: cbits/ghcjs-prim.c
   build-depends:       base             >= 4 && < 5,
                        ghc-prim,
-                       template-haskell >= 2.9 && < 2.10,
+                       template-haskell >= 2.9 && < 2.11,
                        primitive,
                        binary,
                        bytestring,

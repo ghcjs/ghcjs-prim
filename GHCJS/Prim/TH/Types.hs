@@ -64,9 +64,13 @@ data Message
 instance Binary THResultType
 instance Binary Message
 
-#if MIN_VERSION_template_haskell(2,10,0)
+#if MIN_VERSION_template_haskell(2,11,0)
 #error "unsupported template-haskell version"
 #elif MIN_VERSION_template_haskell(2,9,0)
+
+#if !MIN_VERSION_template_haskell(2,10,0)
+deriving instance Generic TH.Pred
+#endif
 
 deriving instance Generic TH.Loc
 deriving instance Generic TH.Name
@@ -78,7 +82,6 @@ deriving instance Generic TH.Info
 deriving instance Generic TH.Type
 deriving instance Generic TH.TyLit
 deriving instance Generic TH.TyVarBndr
-deriving instance Generic TH.Pred
 deriving instance Generic TH.Role
 deriving instance Generic TH.Lit
 deriving instance Generic TH.Range
@@ -110,6 +113,10 @@ deriving instance Generic TH.AnnLookup
 deriving instance Generic TH.ModuleInfo
 deriving instance Generic TH.Clause
 
+#if !MIN_VERSION_template_haskell(2,10,0)
+instance Binary TH.Pred
+#endif
+
 instance Binary TH.Loc
 instance Binary TH.Name
 instance Binary TH.ModName
@@ -133,7 +140,6 @@ instance Binary TH.Info
 instance Binary TH.Type
 instance Binary TH.TyLit
 instance Binary TH.TyVarBndr
-instance Binary TH.Pred
 instance Binary TH.Role
 instance Binary TH.Lit
 instance Binary TH.Range
