@@ -33,6 +33,7 @@ import qualified Data.ByteString.Unsafe   as BU
 import           Data.Data
 import           Data.Dynamic
 import           Data.Int
+import           Data.IORef
 import           Data.Map                 (Map)
 import qualified Data.Map                 as M
 import           Data.Maybe
@@ -54,15 +55,15 @@ import           System.IO
 
 import           Unsafe.Coerce
 
-data QState = QState { qsMap        :: Map TypeRep Dynamic  -- ^ persistent data between splices in a module
-                     , qsFinalizers :: [TH.Q ()]            -- ^ registered finalizers (in reverse order)
-                     , qsMessages   :: [(Bool, String)]     -- ^ messages reported
-                     , qsLocation   :: Maybe TH.Loc         -- ^ location for current splice, if any
+data QState = QState { qsMap        :: Map TypeRep Dynamic    -- ^ persistent data between splices in a module
+                     , qsFinalizers :: [TH.Q ()]              -- ^ registered finalizers (in reverse order)
+                     , qsMessages   :: IORef [(Bool, String)] -- ^ messages reported
+                     , qsLocation   :: Maybe TH.Loc           -- ^ location for current splice, if any
                      }
 instance Show QState where show _ = "<QState>"
 
-initQState :: QState
-initQState = QState M.empty [] [] Nothing
+initQState :: IORef [(Bool, String)] -> QState
+initQState msgs = QState M.empty [] msgs Nothing
 
 runModFinalizers :: GHCJSQ ()
 runModFinalizers = go =<< getState
@@ -109,11 +110,12 @@ instance TH.Quasi GHCJSQ where
   qNewName str = do
     NewName' name <- TH.qRunIO (sendRequest $ NewName str)
     return name
-  qReport isError msg = GHCJSQ $ \s ->
-    return ((), s { qsMessages = (isError, msg) : qsMessages s })
+  qReport isError msg = getState >>=
+    TH.qRunIO . flip modifyIORef ((isError,msg):) . qsMessages
   qRecover (GHCJSQ h) (GHCJSQ a) = GHCJSQ $ \s ->
     -- discard error messages on recovery
-    a s `E.catch` \(GHCJSQException s' _) -> h (s' { qsMessages = filter (not . fst) (qsMessages s') })
+    a s `E.catch` \(GHCJSQException s' _) ->
+      TH.qRunIO (modifyIORef (qsMessages s') (filter (not . fst))) >> h s'
   qLookupName isType occ = do
     LookupName' name <- TH.qRunIO (sendRequest $ LookupName isType occ)
     return name
@@ -166,16 +168,18 @@ convertAnnPayloads bs = catMaybes (map convert bs)
 
 -- | the Template Haskell server
 runTHServer :: IO ()
-runTHServer =
-  void (runGHCJSQ server initQState) `E.catches`
-    [ E.Handler $ \(GHCJSQException _ msg) -> void (sendRequest $ QFail msg)
-    , E.Handler $ \(E.SomeException e)     -> void (sendRequest $ QException (show e))
+runTHServer = do
+  msgs <- newIORef []
+  void (runGHCJSQ server (initQState msgs)) `E.catches`
+    [ E.Handler $ \(GHCJSQException _ msg) -> sendReportedMessages' msgs >> void (sendRequest $ QFail msg)
+    , E.Handler $ \(E.SomeException e)     -> sendReportedMessages' msgs >> void (sendRequest $ QException (show e))
     ]
   where
     server = TH.qRunIO awaitMessage >>= \case
       RunTH t code loc -> do
         a <- TH.qRunIO (loadCode code)
         runTH t a loc
+        sendReportedMessages
         server
       FinishTH -> do
         runModFinalizers
@@ -212,11 +216,14 @@ loadCode bs = do
 
 sendReportedMessages :: GHCJSQ ()
 sendReportedMessages =
+  getState >>= TH.qRunIO . sendReportedMessages' . qsMessages
+
+sendReportedMessages' :: IORef [(Bool,String)] -> IO ()
+sendReportedMessages' r =
   let report (isError, msg) = do
         Report' <- TH.qRunIO (sendRequest $ Report isError msg)
         return ()
-  in getState >>= \s -> mapM_ report (reverse $ qsMessages s) >>
-       putState (s { qsMessages = [] })
+  in  atomicModifyIORef r (\msgs -> ([], msgs)) >>= mapM_ report . reverse
 
 awaitMessage :: IO Message
 awaitMessage = fmap (runGet get . BL.fromStrict) . toBs =<< js_awaitMessage
