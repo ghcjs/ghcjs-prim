@@ -70,7 +70,6 @@ instance Binary Message
 
 #if !MIN_VERSION_template_haskell(2,10,0)
 deriving instance Generic TH.Pred
-#endif
 
 deriving instance Generic TH.Loc
 deriving instance Generic TH.Name
@@ -112,6 +111,7 @@ deriving instance Generic TH.Con
 deriving instance Generic TH.AnnLookup
 deriving instance Generic TH.ModuleInfo
 deriving instance Generic TH.Clause
+#endif
 
 #if !MIN_VERSION_template_haskell(2,10,0)
 instance Binary TH.Pred
@@ -120,6 +120,9 @@ instance Binary TH.Pred
 instance Binary TH.Loc
 instance Binary TH.Name
 instance Binary TH.ModName
+#if MIN_VERSION_template_haskell(2,10,0)
+instance Binary TH.NameFlavour
+#else
 instance Binary TH.NameFlavour where
   put TH.NameS             = putWord8 1
   put (TH.NameQ mn)        = putWord8 2 >> put mn
@@ -133,6 +136,7 @@ instance Binary TH.NameFlavour where
                         4 -> (\(I# i) -> TH.NameL i) <$> get
                         5 -> TH.NameG <$> get <*> get <*> get
                         _ -> error "get Name: invalid tag"
+#endif
 instance Binary TH.PkgName
 instance Binary TH.NameSpace
 instance Binary TH.Module
