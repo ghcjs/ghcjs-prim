@@ -19,6 +19,7 @@ module GHCJS.Prim ( JSRef(..)
                   , jsNull
                   , getProp
                   , getProp'
+                  , eqRef
 #endif
                   ) where
 
@@ -102,6 +103,13 @@ jsNull :: JSRef a
 jsNull = js_null
 {-# INLINE jsNull #-}
 
+eqRef :: JSRef a -> JSRef b -> Bool
+eqRef x y = js_eqRef x y
+{-# INLINE eqRef #-}
+
+instance Eq (JSRef a) where
+  (==) = eqRef
+
 getProp :: JSRef a -> String -> IO (JSRef b)
 getProp o p = js_getProp o (unsafeCoerce $ seqList p)
 {-# INLINE getProp #-}
@@ -147,6 +155,9 @@ foreign import javascript unsafe "$r = $1;"
 
 foreign import javascript unsafe "$r = null;"
   js_null :: JSRef a
+
+foreign import javascript unsafe "$1 === $2"
+  js_eqRef :: JSRef a -> JSRef b -> Bool
 
 foreign import javascript unsafe "$1[h$fromHsString($2)]"
   js_getProp :: JSRef a -> Double -> IO (JSRef b)
