@@ -153,14 +153,22 @@ instance TH.Quasi GHCJSQ where
 
 makeAnnPayload :: forall a. Data a => a -> ByteString
 makeAnnPayload x =
+#if __GLASGOW_HASKELL__ >= 709
+  let TypeRep (Fingerprint w1 w2) _ _ _ = typeOf (undefined :: a)
+#else
   let TypeRep (Fingerprint w1 w2) _ _ = typeOf (undefined :: a)
+#endif
       fp = runPut (putWord64be w1 >> putWord64be w2)
   in  BL.toStrict $ fp <> BL.pack (serializeWithData x)
 
 convertAnnPayloads :: forall a. Data a => [ByteString] -> [a]
 convertAnnPayloads bs = catMaybes (map convert bs)
   where
+#if __GLASGOW_HASKELL__ >= 709
+    TypeRep (Fingerprint w1 w2) _ _ _ = typeOf (undefined :: a)
+#else
     TypeRep (Fingerprint w1 w2) _ _ = typeOf (undefined :: a)
+#endif
     getFp b = runGet ((,) <$> getWord64be <*> getWord64be) $ BL.fromStrict (B.take 16 b)
     convert b | (bw1,bw2) <- getFp b, bw1 == w1, bw2 == w2 =
                   Just (deserializeWithData . B.unpack . B.drop 16 $ b)
