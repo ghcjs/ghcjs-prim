@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -O0 #-}
-{-# LANGUAGE CPP, DeriveGeneric, LambdaCase, MagicHash, StandaloneDeriving #-}
+{-# LANGUAGE CPP, DeriveGeneric, DeriveDataTypeable, LambdaCase, MagicHash, StandaloneDeriving #-}
 
 {- |
      Communication between the compiler (GHCJS) and runtime (on node.js) for
@@ -14,6 +14,7 @@ import           Control.Applicative
 
 import           Data.Binary
 import           Data.ByteString (ByteString)
+import           Data.Data
 import           Data.Word
 
 import           GHC.Generics
@@ -25,7 +26,7 @@ import qualified Language.Haskell.TH        as TH
 import qualified Language.Haskell.TH.Syntax as TH
 
 data THResultType = THExp | THPat | THType | THDec | THAnnWrapper
-  deriving (Enum, Generic)
+  deriving (Enum, Show, Data, Generic)
 
 data Message
   -- | compiler to node requests
@@ -56,10 +57,18 @@ data Message
   | ReifyModule'      TH.ModuleInfo
   | AddDependentFile'
   | AddTopDecls'
+  | QFail'
+  | QCompilerException' Int String -- ^ exception id and result of showing the exception
+  -- | error recovery
+  | StartRecover
+  | EndRecover Bool            -- ^ true for recovery action taken
+  | StartRecover'
+  | EndRecover'
   -- | exit with error status
-  | QFail             String
-  | QException        String
-  deriving (Generic)
+  | QFail              String  -- ^ monadic fail called
+  | QUserException     String  -- ^ exception in user code
+  | QCompilerException Int     -- ^ exception originated on compiler side
+  deriving (Data, Generic)
 
 instance Binary THResultType
 instance Binary Message

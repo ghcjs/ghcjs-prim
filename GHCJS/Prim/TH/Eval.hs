@@ -57,13 +57,12 @@ import           Unsafe.Coerce
 
 data QState = QState { qsMap        :: Map TypeRep Dynamic    -- ^ persistent data between splices in a module
                      , qsFinalizers :: [TH.Q ()]              -- ^ registered finalizers (in reverse order)
-                     , qsMessages   :: IORef [(Bool, String)] -- ^ messages reported
                      , qsLocation   :: Maybe TH.Loc           -- ^ location for current splice, if any
                      }
 instance Show QState where show _ = "<QState>"
 
-initQState :: IORef [(Bool, String)] -> QState
-initQState msgs = QState M.empty [] msgs Nothing
+initQState :: QState
+initQState = QState M.empty [] Nothing
 
 runModFinalizers :: GHCJSQ ()
 runModFinalizers = go =<< getState
@@ -74,7 +73,7 @@ runModFinalizers = go =<< getState
 
 data GHCJSQ a = GHCJSQ { runGHCJSQ :: QState -> IO (a, QState) }
 
-data GHCJSQException = GHCJSQException QState String
+data GHCJSQException = GHCJSQException QState (Maybe Int) String
   deriving (Show, Typeable)
 
 instance E.Exception GHCJSQException
@@ -95,7 +94,7 @@ instance Monad GHCJSQ where
        (a,  s'') <- runGHCJSQ (f m') s'
        return (a, s'')
   return    = pure
-  fail err  = GHCJSQ $ \s -> E.throw (GHCJSQException s err)
+  fail err  = GHCJSQ $ \s -> E.throw (GHCJSQException s Nothing err)
 
 getState :: GHCJSQ QState
 getState = GHCJSQ $ \s -> return (s,s)
@@ -108,39 +107,43 @@ noLoc = TH.Loc "<no file>" "<no package>" "<no module>" (0,0) (0,0)
 
 instance TH.Quasi GHCJSQ where
   qNewName str = do
-    NewName' name <- TH.qRunIO (sendRequest $ NewName str)
+    NewName' name <- sendRequestQ (NewName str)
     return name
-  qReport isError msg = getState >>=
-    TH.qRunIO . flip modifyIORef ((isError,msg):) . qsMessages
-  qRecover (GHCJSQ h) (GHCJSQ a) = GHCJSQ $ \s ->
-    -- discard error messages on recovery
-    a s `E.catch` \(GHCJSQException s' _) ->
-      TH.qRunIO (modifyIORef (qsMessages s') (filter (not . fst))) >> h s'
+  qReport isError msg = do
+    Report' <- sendRequestQ (Report isError msg)
+    return ()
+  qRecover (GHCJSQ h) (GHCJSQ a) = GHCJSQ $ \s -> do
+    let r :: Bool -> IO ()
+        r b = do EndRecover' <- sendRequest (EndRecover b)
+                 return ()
+    StartRecover' <- sendRequest StartRecover
+    (a s >>= \s' -> r False >> return s') `E.catch`
+      \(GHCJSQException s' _ _) -> r True >> h s
   qLookupName isType occ = do
-    LookupName' name <- TH.qRunIO (sendRequest $ LookupName isType occ)
+    LookupName' name <- sendRequestQ (LookupName isType occ)
     return name
   qReify name = do
-    Reify' info <- TH.qRunIO (sendRequest $ Reify name)
+    Reify' info <- sendRequestQ (Reify name)
     return info
   qReifyInstances name tys = do
-    ReifyInstances' decls <- TH.qRunIO (sendRequest $ ReifyInstances name tys)
+    ReifyInstances' decls <- sendRequestQ (ReifyInstances name tys)
     return decls
   qReifyRoles name = do
-    ReifyRoles' roles <- TH.qRunIO (sendRequest $ ReifyRoles name)
+    ReifyRoles' roles <- sendRequestQ (ReifyRoles name)
     return roles
   qReifyAnnotations lookup = do
-    ReifyAnnotations' payloads <- TH.qRunIO (sendRequest $ ReifyAnnotations lookup)
+    ReifyAnnotations' payloads <- sendRequestQ (ReifyAnnotations lookup)
     return (convertAnnPayloads payloads)
   qReifyModule m = do
-    ReifyModule' mi <- TH.qRunIO (sendRequest $ ReifyModule m)
+    ReifyModule' mi <- sendRequestQ (ReifyModule m)
     return mi
   qLocation = fromMaybe noLoc . qsLocation <$> getState
   qRunIO m = GHCJSQ $ \s -> fmap (,s) m
   qAddDependentFile file = do
-    AddDependentFile' <- TH.qRunIO (sendRequest $ AddDependentFile file)
+    AddDependentFile' <- sendRequestQ (AddDependentFile file)
     return ()
   qAddTopDecls decls = do
-    AddTopDecls' <- TH.qRunIO (sendRequest $ AddTopDecls decls)
+    AddTopDecls' <- sendRequestQ (AddTopDecls decls)
     return ()
   qAddModFinalizer fin = GHCJSQ $ \s ->
     return ((), s { qsFinalizers = fin : qsFinalizers s })
@@ -177,21 +180,21 @@ convertAnnPayloads bs = catMaybes (map convert bs)
 -- | the Template Haskell server
 runTHServer :: IO ()
 runTHServer = do
-  msgs <- newIORef []
-  void (runGHCJSQ server (initQState msgs)) `E.catches`
-    [ E.Handler $ \(GHCJSQException _ msg) -> sendReportedMessages' msgs >> void (sendRequest $ QFail msg)
-    , E.Handler $ \(E.SomeException e)     -> sendReportedMessages' msgs >> void (sendRequest $ QException (show e))
+--  msgs <- newIORef []
+  void (runGHCJSQ server initQState) `E.catches`
+    [ E.Handler $ \(GHCJSQException _ mn msg) ->
+         void . sendRequest $ maybe (QFail msg) QCompilerException mn
+    , E.Handler $ \(E.SomeException e) ->
+         void (sendRequest $ QUserException (show e))
     ]
   where
     server = TH.qRunIO awaitMessage >>= \case
       RunTH t code loc -> do
         a <- TH.qRunIO (loadCode code)
         runTH t a loc
-        sendReportedMessages
         server
       FinishTH -> do
         runModFinalizers
-        sendReportedMessages
         TH.qRunIO $ sendResult FinishTH'
       _ -> error "runTHServer: unexpected message type"
 
@@ -207,7 +210,6 @@ runTH rt obj = \mb_loc -> obj `seq` do
            THDec        -> runTHCode (unsafeCoerce obj :: TH.Q [TH.Dec])
            THAnnWrapper -> case unsafeCoerce obj of
                              AnnotationWrapper x -> return (makeAnnPayload x)
-  sendReportedMessages
   s1 <- getState
   TH.qRunIO (sendResult $ RunTH' res)
   putState $ s1 { qsLocation = Nothing }
@@ -221,17 +223,6 @@ loadCode :: ByteString -> IO Any
 loadCode bs = do
   p <- fromBs bs
   unsafeCoerce <$> js_loadCode p (B.length bs)
-
-sendReportedMessages :: GHCJSQ ()
-sendReportedMessages =
-  getState >>= TH.qRunIO . sendReportedMessages' . qsMessages
-
-sendReportedMessages' :: IORef [(Bool,String)] -> IO ()
-sendReportedMessages' r =
-  let report (isError, msg) = do
-        Report' <- TH.qRunIO (sendRequest $ Report isError msg)
-        return ()
-  in  atomicModifyIORef r (\msgs -> ([], msgs)) >>= mapM_ report . reverse
 
 awaitMessage :: IO Message
 awaitMessage = fmap (runGet get . BL.fromStrict) . toBs =<< js_awaitMessage
@@ -249,6 +240,15 @@ sendRequest msg = do
   let bs = BL.toStrict $ runPut (put msg)
   p <- fromBs bs
   fmap (runGet get . BL.fromStrict) . toBs =<< js_sendRequest p (B.length bs)
+
+-- | send a request and wait for the response
+--   a CompilerException' response is converted to a GHCJSQException which
+--   can be handled with recover.
+sendRequestQ :: Message -> GHCJSQ Message
+sendRequestQ msg = TH.qRunIO (sendRequest msg) >>= \case
+   QCompilerException' n msg -> GHCJSQ $
+     \s -> E.throw (GHCJSQException s (Just n) msg)
+   response                 -> return response
 
 foreign import javascript interruptible "h$TH.sendRequest($1_1,$1_2,$2,$c);"
   js_sendRequest :: Ptr Word8 -> Int -> IO (Ptr Word8)
